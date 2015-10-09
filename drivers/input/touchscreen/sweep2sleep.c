@@ -25,7 +25,7 @@ MODULE_LICENSE("GPL");
 
 // 1=sweep right, 2=sweep left, 3=both
 static int s2s_switch = 2;
-
+static int s2s_y_limit = S2S_Y_LIMIT;
 static int touch_x = 0, touch_y = 0, firstx = 0;
 static bool touch_x_called = false, touch_y_called = false;
 static bool scr_on_touch = false, barrier[2] = {false, false};
@@ -89,18 +89,18 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		if ((barrier[0] == true) ||
 		   ((x > prevx) &&
 		    (x < nextx) &&
-		    (y > s2s_y_limit))) {
+		    (y > S2S_Y_LIMIT))) {
 			prevx = nextx;
 			nextx += 200;
 			barrier[0] = true;
 			if ((barrier[1] == true) ||
 			   ((x > prevx) &&
 			    (x < nextx) &&
-			    (y > s2s_y_limit))) {
+			    (y > S2S_Y_LIMIT))) {
 				prevx = nextx;
 				barrier[1] = true;
 				if ((x > prevx) &&
-				    (y > s2s_y_limit)) {
+				    (y > S2S_Y_LIMIT)) {
 					if (x > (nextx + 180)) {
 						if (exec_count) {
 							sweep2sleep_pwrtrigger();
@@ -118,18 +118,18 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		if ((barrier[0] == true) ||
 		   ((x < prevx) &&
 		    (x > nextx) &&
-		    (y > s2s_y_limit))) {
+		    (y > S2S_Y_LIMIT))) {
 			prevx = nextx;
 			nextx -= 200;
 			barrier[0] = true;
 			if ((barrier[1] == true) ||
 			   ((x < prevx) &&
 			    (x > nextx) &&
-			    (y > s2s_y_limit))) {
+			    (y > S2S_Y_LIMIT))) {
 				prevx = nextx;
 				barrier[1] = true;
 				if ((x < prevx) &&
-				    (y > s2s_y_limit)) {
+				    (y > S2S_Y_LIMIT)) {
 					if (x < (nextx - 180)) {
 						if (exec_count) {
 							sweep2sleep_pwrtrigger();
@@ -361,3 +361,4 @@ static void __exit sweep2sleep_exit(void)
 
 module_init(sweep2sleep_init);
 module_exit(sweep2sleep_exit);
+
