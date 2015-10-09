@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -30,6 +30,10 @@
 #ifdef CONFIG_KPDPWR_S2_DVDD_RESET
 #include <linux/htc_flags.h>
 #endif 
+#define CREATE_MASK(NUM_BITS, POS) \
+	((unsigned char) (((1 << (NUM_BITS)) - 1) << (POS)))
+#define PON_MASK(MSB_BIT, LSB_BIT) \
+	CREATE_MASK(MSB_BIT - LSB_BIT + 1, LSB_BIT)
 
 #define PMIC_VER_8941           0x01
 #define PMIC_VERSION_REG        0x0105
@@ -69,6 +73,7 @@
 #define QPNP_PON_S3_DBC_CTL(base)		(base + 0x75)
 #define QPNP_PON_TRIGGER_EN(base)		(base + 0x80)
 #define QPNP_PON_XVDD_RB_SPARE(base)		(base + 0x8E)
+#define QPNP_PON_SOFT_RB_SPARE(base)		(base + 0x8F)
 #define QPNP_PON_SEC_ACCESS(base)		(base + 0xD0)
 
 #define QPNP_PON_SEC_UNLOCK			0xA5
@@ -102,6 +107,7 @@
 #define QPNP_PON_S3_SRC_KPDPWR_AND_RESIN	2
 #define QPNP_PON_S3_SRC_KPDPWR_OR_RESIN		3
 #define QPNP_PON_S3_SRC_MASK			0x3
+#define QPNP_PON_HARD_RESET_MASK		PON_MASK(7, 5)
 
 #define QPNP_PON_UVLO_DLOAD_EN		BIT(7)
 
@@ -152,6 +158,7 @@ struct qpnp_pon {
 	u8 warm_reset_reason1;
 	u8 warm_reset_reason2;
 	bool is_spon;
+	bool store_hard_reset_reason;
 };
 
 static struct qpnp_pon *sys_reset_dev;
@@ -248,17 +255,47 @@ qpnp_pon_masked_write_for_pmi(struct qpnp_pon *pon, u16 addr, u8 mask, u8 val)
 	return rc;
 }
 
+int qpnp_pon_set_restart_reason(enum pon_restart_reason reason)
+{
+	int rc = 0;
+	struct qpnp_pon *pon = sys_reset_dev;
+
+	if (!pon)
+		return 0;
+
+	if (!pon->store_hard_reset_reason)
+		return 0;
+
+	rc = qpnp_pon_masked_write(pon, QPNP_PON_SOFT_RB_SPARE(pon->base),
+					PON_MASK(7, 5), (reason << 5));
+	if (rc)
+		dev_err(&pon->spmi->dev,
+				"Unable to write to addr=%x, rc(%d)\n",
+				QPNP_PON_SOFT_RB_SPARE(pon->base), rc);
+	return rc;
+}
+EXPORT_SYMBOL(qpnp_pon_set_restart_reason);
+
+bool qpnp_pon_check_hard_reset_stored(void)
+{
+	struct qpnp_pon *pon = sys_reset_dev;
+
+	if (!pon)
+		return false;
+
+	return pon->store_hard_reset_reason;
+}
+EXPORT_SYMBOL(qpnp_pon_check_hard_reset_stored);
+
 static int qpnp_pon_set_dbc(struct qpnp_pon *pon, u32 delay)
 {
 	int rc = 0;
 	u32 delay_reg;
 
-	if (!pon->pon_input)
-		return -EINVAL;
-
-	mutex_lock(&pon->pon_input->mutex);
 	if (delay == pon->dbc)
-		goto unlock;
+		goto out;
+	if (pon->pon_input)
+		mutex_lock(&pon->pon_input->mutex);
 
 	if (delay < QPNP_PON_MIN_DBC_US)
 		delay = QPNP_PON_MIN_DBC_US;
@@ -277,7 +314,9 @@ static int qpnp_pon_set_dbc(struct qpnp_pon *pon, u32 delay)
 	pon->dbc = delay;
 
 unlock:
-	mutex_unlock(&pon->pon_input->mutex);
+	if (pon->pon_input)
+		mutex_unlock(&pon->pon_input->mutex);
+out:
 	return rc;
 }
 
@@ -1527,6 +1566,56 @@ static void qpnp_pon_debugfs_remove(struct spmi_device *spmi)
 {}
 #endif
 
+int qpnp_pon_set_s3_timer(u32 s3_debounce)
+{
+	int rc = 0;
+	struct qpnp_pon *pon = sys_reset_dev;
+
+	
+	rc = qpnp_pon_masked_write(pon, QPNP_PON_SEC_ACCESS(pon->base),
+			0xFF, QPNP_PON_SEC_UNLOCK);
+	if (rc) {
+		dev_err(&pon->spmi->dev, "PM8994:Unable to do SEC_ACCESS rc:%d\n",
+			rc);
+		return rc;
+	}
+
+	
+	rc = qpnp_pon_masked_write(pon, QPNP_PON_S3_DBC_CTL(pon->base),
+			QPNP_PON_S3_DBC_DELAY_MASK, s3_debounce);
+	if (rc) {
+		dev_err(&pon->spmi->dev, "PM8994:Unable to set S3 debounce rc:%d\n",
+			rc);
+		return rc;
+	}
+
+	
+	udelay(200);
+
+	
+	rc = qpnp_pon_masked_write_for_pmi(pon, QPNP_PON_SEC_ACCESS(pon->base),
+			0xFF, QPNP_PON_SEC_UNLOCK);
+	if (rc) {
+		dev_err(&pon->spmi->dev, "PMI8994:Unable to do SEC_ACCESS rc:%d\n",
+			rc);
+		return rc;
+	}
+
+	
+	rc = qpnp_pon_masked_write_for_pmi(pon, QPNP_PON_S3_DBC_CTL(pon->base),
+			QPNP_PON_S3_DBC_DELAY_MASK, s3_debounce);
+	if (rc) {
+		dev_err(&pon->spmi->dev, "PMI8994:Unable to set S3 debounce rc:%d\n",
+			rc);
+		return rc;
+	}
+
+	
+	udelay(200);
+
+	return rc;
+}
+
 static int qpnp_pon_probe(struct spmi_device *spmi)
 {
 	struct qpnp_pon *pon;
@@ -1642,10 +1731,12 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 	
 	rc = of_property_read_u32(pon->spmi->dev.of_node,
 				"qcom,s3-debounce", &s3_debounce);
-	if (rc && rc != -EINVAL) {
-		dev_err(&pon->spmi->dev, "Unable to read s3 timer rc:%d\n",
-			rc);
-		return rc;
+	if (rc) {
+		if (rc != -EINVAL) {
+			dev_err(&pon->spmi->dev, "Unable to read s3 timer rc:%d\n",
+				rc);
+			return rc;
+		}
 	} else {
 		if (s3_debounce > QPNP_PON_S3_TIMER_SECS_MAX) {
 			dev_info(&pon->spmi->dev,
@@ -1722,10 +1813,12 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 
 	rc = of_property_read_u32(pon->spmi->dev.of_node,
 				"qcom,pon-dbc-delay", &delay);
-	if (rc && rc != -EINVAL) {
-		dev_err(&spmi->dev, "Unable to read debounce delay rc: %d\n",
-			rc);
-		return rc;
+	if (rc) {
+		if (rc != -EINVAL) {
+			dev_err(&spmi->dev, "Unable to read debounce delay rc: %d\n",
+				rc);
+			return rc;
+		}
 	} else {
 		rc = qpnp_pon_set_dbc(pon, delay);
 	}
@@ -1748,6 +1841,11 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 		mutex_unlock(&spon_list_mutex);
 		pon->is_spon = true;
 	}
+
+	
+	pon->store_hard_reset_reason = of_property_read_bool(
+					spmi->dev.of_node,
+					"qcom,store-hard-reset-reason");
 
 	qpnp_pon_debugfs_init(spmi);
 	return 0;

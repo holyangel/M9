@@ -382,7 +382,7 @@ struct request_queue {
 #define QUEUE_FLAG_DEFAULT	((1 << QUEUE_FLAG_IO_STAT) |		\
 				 (1 << QUEUE_FLAG_STACKABLE)	|	\
 				 (1 << QUEUE_FLAG_SAME_COMP)	|	\
-				 (0 << QUEUE_FLAG_ADD_RANDOM))
+				 (1 << QUEUE_FLAG_ADD_RANDOM))
 
 static inline void queue_lockdep_assert_held(struct request_queue *q)
 {
@@ -816,6 +816,8 @@ extern void blk_queue_flush_queueable(struct request_queue *q, bool queueable);
 extern struct backing_dev_info *blk_get_backing_dev_info(struct block_device *bdev);
 
 extern int blk_rq_map_sg(struct request_queue *, struct request *, struct scatterlist *);
+extern int blk_rq_map_sg_no_cluster
+	(struct request_queue *, struct request *, struct scatterlist *);
 extern int blk_bio_map_sg(struct request_queue *q, struct bio *bio,
 			  struct scatterlist *sglist);
 extern void blk_dump_rq_flags(struct request *, char *);
