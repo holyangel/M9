@@ -20,7 +20,7 @@
 * software in any way with any other Broadcom software provided under a license
 * other than the GPL, without Broadcom's express prior written consent.
 *
-* $Id: dhd_custom_gpio.c 520333 2014-12-11 04:40:28Z $
+* $Id: dhd_custom_gpio.c 594530 2015-10-22 11:39:42Z $
 */
 
 #include <typedefs.h>
@@ -374,57 +374,57 @@ const struct cntry_locales_custom translate_custom_table[] = {
 	{"Q1", "Q1", 77},
 #elif defined(CUSTOMER_HW_ONE)
 	{"",   "XZ", 11}, 
-	{"AM", "AM", 0},
-	{"AR", "AR", 23},
-	{"AU", "AU", 4},
-	{"BG", "BG", 3},
+	{"AM", "AM", 1},
+	{"AR", "AR", 21},
+	{"AU", "AU", 6},
+	{"BG", "BG", 4},
 	{"BH", "BH", 4},
-	{"BR", "BR", 2},
+	{"BR", "BR", 15},
 	{"CA", "CA", 31},
 	{"CL", "CL", 0},
 	{"CN", "CN", 38},
 	{"CO", "CO", 17},
-	{"DE", "DE", 6},
-	{"DZ", "DZ", 1},
-	{"EG", "EG", 2},
-	{"ES", "ES", 3},
-	{"FR", "FR", 3},
-	{"HK", "HK", 1},
-	{"ID", "ID", 11},
-	{"IL", "IL", 5},
-	{"IN", "IN", 2},
+	{"DE", "DE", 7},
+	{"DZ", "XZ", 11},
+	{"EG", "VE", 3},
+	{"ES", "ES", 4},
+	{"FR", "FR", 5},
+	{"HK", "HK", 2},
+	{"ID", "ID", 5},
+	{"IL", "IL", 7},
+	{"IN", "IN", 3},
 	{"IQ", "IQ", 0},
-	{"JO", "JO", 4},
+	{"JO", "JO", 3},
 	{"JP", "JP", 45},
-	{"KR", "KR", 45},
+	{"KR", "KR", 4},
 	{"KW", "KW", 5},
-	{"KZ", "KZ", 212},
+	{"KZ", "KZ", 0},
 	{"LB", "LB", 3},
-	{"LY", "FR", 3},
-	{"MA", "MA", 2},
-	{"MM", "MM", 5},
-	{"MY", "MY", 2},
-	{"MX", "MX", 24},
-	{"NZ", "NZ", 2},
+	{"LY", "XZ", 11},
+	{"MA", "IL", 7},
+	{"MM", "MM", 0},
+	{"MY", "MY", 19},
+	{"MX", "MX", 20},
+	{"NZ", "NZ", 4},
 	{"OM", "OM", 4},
 	{"PE", "PE", 20},
-	{"PH", "PH", 3},
+	{"PH", "PH", 5},
 	{"PR", "PR", 20},
 	{"QA", "QA", 0},
 	{"RS", "RS", 2},
-	{"RU", "RU", 36},
+	{"RU", "RU", 62},
 	{"SA", "SA", 0},
-	{"SG", "SG", 11},
-	{"TH", "TH", 3},
+	{"SG", "TH", 5},
+	{"TH", "TH", 5},
 	{"TN", "TN", 0},
 	{"TR", "TR", 7},
-	{"TW", "TW", 1},
-	{"UA", "UA", 12},
-	{"US", "US", 111},
-	{"VE", "VE", 2},
-	{"VN", "VN", 2},
+	{"TW", "TW", 65},
+	{"UA", "UA", 13},
+	{"US", "US", 0},
+	{"VE", "VE", 3},
+	{"VN", "VN", 4},
 	{"YE", "YE", 0},
-	{"ZA", "ZA", 3},
+	{"ZA", "ZA", 0},
 #endif 
 };
 
@@ -464,7 +464,7 @@ void get_customized_country_code(void *adapter, char *country_iso_code, wl_count
 			return;
 		}
 	}
-#ifdef EXAMPLE_TABLE
+#if defined(EXAMPLE_TABLE) || defined(CUSTOMER_HW_ONE)
 	
 	memcpy(cspec->ccode, translate_custom_table[0].custom_locale, WLC_CNTRY_BUF_SZ);
 	cspec->rev = translate_custom_table[0].custom_locale_rev;

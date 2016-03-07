@@ -396,10 +396,10 @@ struct synaptics_rmi4_exp_fn_data {
 static struct synaptics_rmi4_exp_fn_data exp_data;
 
 static struct device_attribute attrs[] = {
-	__ATTR(full_pm_cycle, (S_IRUGO | S_IWUGO),
+	__ATTR(full_pm_cycle, (S_IRUGO | S_IWUSR),
 			synaptics_rmi4_full_pm_cycle_show,
 			synaptics_rmi4_full_pm_cycle_store),
-	__ATTR(reset, S_IWUGO,
+	__ATTR(reset, S_IWUSR,
 			synaptics_rmi4_show_error,
 			synaptics_rmi4_f01_reset_store),
 	__ATTR(productinfo, S_IRUGO,
@@ -411,18 +411,18 @@ static struct device_attribute attrs[] = {
 	__ATTR(flashprog, S_IRUGO,
 			synaptics_rmi4_f01_flashprog_show,
 			synaptics_rmi4_store_error),
-	__ATTR(0dbutton, (S_IRUGO | S_IWUGO),
+	__ATTR(0dbutton, (S_IRUGO | S_IWUSR),
 			synaptics_rmi4_0dbutton_show,
 			synaptics_rmi4_0dbutton_store),
-	__ATTR(suspend, S_IWUGO,
+	__ATTR(suspend, S_IWUSR,
 			synaptics_rmi4_show_error,
 			synaptics_rmi4_suspend_store),
 #ifdef CONFIG_FB
-	__ATTR(early_suspend, S_IWUGO,
+	__ATTR(early_suspend, S_IWUSR,
 			synaptics_rmi4_show_error,
 			synaptics_rmi4_early_suspend_store),
 #endif
-	__ATTR(wake_gesture, (S_IRUGO | S_IWUGO),
+	__ATTR(wake_gesture, (S_IRUGO | S_IWUSR),
 			synaptics_rmi4_wake_gesture_show,
 			synaptics_rmi4_wake_gesture_store),
 };
@@ -788,7 +788,7 @@ static ssize_t synaptics_reset_store(struct device *dev,
 	return count;
 }
 
-static DEVICE_ATTR(reset, S_IWUGO, NULL, synaptics_reset_store);
+static DEVICE_ATTR(reset, S_IWUSR, NULL, synaptics_reset_store);
 
 static ssize_t synaptics_diag_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -1347,6 +1347,7 @@ static int synaptics_rmi4_set_status(struct synaptics_rmi4_data *rmi4_data, int 
 	
 	report_control[0] = control_data[6];
 	report_control[1] = control_data[7];
+	report_control[2] = control_data[8];
 
 	if (rmi4_data->i2c_to_mcu) {
 		pr_info("%s: switch to MCU\n", __func__);
@@ -1355,7 +1356,7 @@ static int synaptics_rmi4_set_status(struct synaptics_rmi4_data *rmi4_data, int 
 	retval = synaptics_rmi4_reg_write(rmi4_data,
 			fhandler->full_addr.ctrl_base + ctrl_15_offset,
 			report_control,
-			sizeof(uint8_t) * 2);
+			sizeof(uint8_t) * 3);
 	if (retval < 0) {
 		dev_err(rmi4_data->pdev->dev.parent,
 				"%s: Failed to write F12_CTRL_15\n",
@@ -1364,7 +1365,7 @@ static int synaptics_rmi4_set_status(struct synaptics_rmi4_data *rmi4_data, int 
 	}
 
 	
-	report_control[0] = control_data[8];
+	report_control[0] = control_data[9];
 
 	if (rmi4_data->i2c_to_mcu) {
 		pr_info("%s: switch to MCU\n", __func__);
@@ -1928,6 +1929,7 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 				glove_status |= 1 << finger;
 		case F12_FINGER_STATUS:
 #ifdef TYPE_B_PROTOCOL
+		if (rmi4_data->hall_block_touch_event == 0) {
 			input_mt_slot(rmi4_data->input_dev, finger);
 			input_mt_report_slot_state(rmi4_data->input_dev,
 					MT_TOOL_FINGER, 1);
@@ -1937,6 +1939,7 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 			else
 				input_report_abs(rmi4_data->input_dev,
 						ABS_MT_GLOVE, 0);
+		}
 #endif
 
 #ifdef F12_DATA_15_WORKAROUND
@@ -3958,6 +3961,7 @@ static int synaptics_rmi4_free_fingers(struct synaptics_rmi4_data *rmi4_data)
 			input_report_abs(rmi4_data->input_dev, ABS_MT_POSITION,	(1 << 31));
 #endif
 		}
+		rmi4_data->report_points[ii].state = 0;
 	}
 	rmi4_data->glove_status = 0;
 #endif
@@ -4089,6 +4093,7 @@ static int synaptics_rmi4_reinit_device(struct synaptics_rmi4_data *rmi4_data)
 	if (retval < 0)
 		goto exit;
 
+	rmi4_data->sensor_sleep = false;
 	mutex_lock(&exp_data.mutex);
 	if (!list_empty(&exp_data.list)) {
 		list_for_each_entry(exp_fhandler, &exp_data.list, link)
@@ -4102,6 +4107,10 @@ static int synaptics_rmi4_reinit_device(struct synaptics_rmi4_data *rmi4_data)
 	if (rmi4_data->cover_mode || (rmi4_data->glove_setting & 0x01)) {
 		synaptics_rmi4_set_chip_mode(rmi4_data);
 	}
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_SUPPORT_INCELL
+	else
+		synaptics_rmi4_querry_f51_data(rmi4_data);
+#endif
 	retval = 0;
 
 exit:
@@ -4178,6 +4187,10 @@ static int synaptics_rmi4_reset_device(struct synaptics_rmi4_data *rmi4_data)
 	if (rmi4_data->cover_mode || (rmi4_data->glove_setting & 0x01)) {
 		synaptics_rmi4_set_chip_mode(rmi4_data);
 	}
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_SUPPORT_INCELL
+	else
+		synaptics_rmi4_querry_f51_data(rmi4_data);
+#endif
 
 	synaptics_rmi4_sensor_wake(rmi4_data);
 
@@ -4399,16 +4412,26 @@ static int synaptics_rmi4_probe(struct platform_device *pdev)
 		goto err_set_input_dev;
 	}
 
-	if (strcmp(htc_get_bootmode(), "offmode_charging") == 0) {
 #ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_SUPPORT_INCELL
+	if (strcmp(htc_get_bootmode(), "recovery") == 0) {
+		pr_info("Recovery mode. Disable touch\n");
+		retval = -ENODEV;
+		goto err_off_mode;
+	}
+
+	if (strcmp(htc_get_bootmode(), "offmode_charging") == 0) {
 		pr_info("Offmode charging. Disable touch interrupts\n");
 		offmode_charging_flag = 1;
-#else
-		pr_info("Offmode charging. Set touch chip to sleep mode and skip touch driver probe\n");
-		synaptics_rmi4_sensor_sleep(rmi4_data);
-		goto err_off_mode;
-#endif
 	}
+#else
+	if ((strcmp(htc_get_bootmode(), "offmode_charging") == 0)
+		|| (strcmp(htc_get_bootmode(), "recovery") == 0)) {
+		pr_info("%s mode. Set touch chip to sleep mode and skip touch driver probe\n", htc_get_bootmode());
+		synaptics_rmi4_sensor_sleep(rmi4_data);
+		retval = -ENODEV;
+		goto err_off_mode;
+	}
+#endif
 
 	if (bdata->support_glove) {
 		synaptics_rmi4_set_status(rmi4_data, 0);
@@ -4571,9 +4594,7 @@ err_enable_irq:
 	fb_unregister_client(&rmi4_data->fb_notifier);
 #endif
 
-#ifndef CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_SUPPORT_INCELL
 err_off_mode:
-#endif
 	synaptics_rmi4_empty_fn_list(rmi4_data);
 	if (rmi4_data->temp_report_data != NULL)
 		kfree(rmi4_data->temp_report_data);
@@ -4975,6 +4996,7 @@ static void synaptics_rmi4_late_resume(struct device *dev)
 #ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_SUPPORT_INCELL
 		synaptics_rmi4_irq_enable(rmi4_data, true);
 		synaptics_rmi4_hw_reset_device(rmi4_data);
+		rmi4_data->sensor_sleep = false;
 #else
 		synaptics_rmi4_sensor_wake(rmi4_data);
 	#ifdef CONFIG_SYNC_TOUCH_STATUS

@@ -120,6 +120,9 @@ module_param_named(disabled, disabled, int,
 static bool in_suspend;
 static bool activate_power_table;
 
+/*
+ * Cannot be called from an interrupt context
+ */
 static void set_and_activate_threshold(uint32_t sensor_id,
 	struct sensor_threshold *threshold)
 {
@@ -142,6 +145,11 @@ static void set_threshold(struct cpu_activity_info *cpu_node)
 	if (cpu_node->sensor_id < 0)
 		return;
 
+	/*
+	 * Before operating on the threshold structure which is used by
+	 * thermal core ensure that the sensor is disabled to prevent
+	 * incorrect operations on the sensor list maintained by thermal code.
+	 */
 	sensor_activate_trip(cpu_node->sensor_id,
 			&cpu_node->hi_threshold, false);
 	sensor_activate_trip(cpu_node->sensor_id,
@@ -150,6 +158,11 @@ static void set_threshold(struct cpu_activity_info *cpu_node)
 	cpu_node->hi_threshold.temp = cpu_node->temp + high_hyst_temp;
 	cpu_node->low_threshold.temp = cpu_node->temp - low_hyst_temp;
 
+	/*
+	 * Set the threshold only if we are below the hotplug limit
+	 * Adding more work at this high temperature range, seems to
+	 * fail hotplug notifications.
+	 */
 	if (cpu_node->hi_threshold.temp < CPU_HOTPLUG_LIMIT)
 		set_and_activate_threshold(cpu_node->sensor_id,
 			&cpu_node->hi_threshold);
@@ -163,6 +176,7 @@ static void samplequeue_handle(struct work_struct *work)
 	complete(&sampling_completion);
 }
 
+/* May be called from an interrupt context */
 static void core_temp_notify(enum thermal_trip_type type,
 		int temp, void *data)
 {
@@ -223,6 +237,10 @@ void trigger_cpu_pwr_stats_calc(void)
 
 		prev_temp[cpu] = cpu_node->temp;
 
+		/*
+		 * Do not populate/update stats before policy and ptable have
+		 * been updated.
+		 */
 		if (activate_power_table && cpu_stats[cpu].ptable
 			&& cpu_node->sp->table)
 			repopulate_stats(cpu);
@@ -261,6 +279,12 @@ static void update_related_freq_table(struct cpufreq_policy *policy)
 			CPUFREQ_TABLE_END;)
 		num_of_freqs++;
 
+	/*
+	 * Synchronous cores within cluster have the same
+	 * policy. Since these cores do not have the cpufreq
+	 * table initialized for all of them, copy the same
+	 * table to all the related cpus.
+	 */
 	for_each_cpu(cpu, policy->related_cpus) {
 		activity[cpu].sp->table = table;
 		activity[cpu].sp->num_of_freqs = num_of_freqs;
@@ -322,6 +346,14 @@ static void clear_static_power(struct cpu_static_info *sp)
 	kfree(sp);
 }
 
+static BLOCKING_NOTIFIER_HEAD(msm_core_stats_notifier_list);
+
+int register_cpu_pwr_stats_ready_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_register(&msm_core_stats_notifier_list,
+						nb);
+}
+
 static int update_userspace_power(struct sched_params __user *argp)
 {
 	int i;
@@ -348,6 +380,9 @@ static int update_userspace_power(struct sched_params __user *argp)
 		return -EINVAL;
 
 	node = &activity[cpu];
+	/* Allocate new memory to copy cpumask specific power
+	 * information.
+	 */
 	sp = kzalloc(sizeof(*sp), GFP_KERNEL);
 	if (!sp)
 		return -ENOMEM;
@@ -370,6 +405,9 @@ static int update_userspace_power(struct sched_params __user *argp)
 			goto failed;
 	}
 
+	/* Copy the same power values for all the cpus in the cpumask
+	 * argp->cpumask within the cluster (argp->cluster)
+	 */
 	spin_lock(&update_lock);
 	cpumask = argp->cpumask;
 	for (i = 0; i < MAX_CORES_PER_CLUSTER; i++, cpumask >>= 1) {
@@ -391,6 +429,9 @@ static int update_userspace_power(struct sched_params __user *argp)
 			}
 			cpu_stats[cpu].ptable = per_cpu(ptable, cpu);
 			repopulate_stats(cpu);
+
+			blocking_notifier_call_chain(
+				&msm_core_stats_notifier_list, cpu, NULL);
 		}
 	}
 	spin_unlock(&update_lock);
@@ -430,13 +471,9 @@ static long msm_core_ioctl(struct file *file, unsigned int cmd,
 			pr_err("Userspace power update failed with %ld\n", ret);
 		break;
 	case EA_VOLT:
-		for (i = 0; i < MAX_CORES_PER_CLUSTER; i++, cpumask >>= 1) {
-			if (!(cpumask & 0x01))
-				continue;
-
-			mpidr |= i;
+		for (i = 0; cpumask > 0; i++, cpumask >>= 1) {
 			for_each_possible_cpu(cpu) {
-				if (cpu_logical_map(cpu) == mpidr)
+				if (cpu_logical_map(cpu) == (mpidr | i))
 					break;
 			}
 		}
@@ -522,6 +559,7 @@ static int msm_core_stats_init(struct device *dev, int cpu)
 		pstate[i].freq = cpu_node->sp->table[i].frequency;
 
 	per_cpu(ptable, cpu) = pstate;
+
 	return 0;
 }
 
@@ -549,6 +587,11 @@ static int msm_get_power_values(int cpu, struct cpu_static_info *sp)
 	int ret = 0;
 	uint64_t power;
 
+	/* Calculate dynamic power spent for every frequency using formula:
+	 * Power = V * V * f
+	 * where V = voltage for frequency
+	 *       f = frequency
+	 * */
 	sp->power = allocate_2d_array_uint32_t(sp->num_of_freqs);
 	if (IS_ERR_OR_NULL(sp->power))
 		return PTR_ERR(sp->power);
@@ -575,6 +618,10 @@ static int msm_get_voltage_levels(struct device *dev, int cpu,
 	int corner;
 	struct opp *opp;
 	struct device *cpu_dev = get_cpu_device(cpu);
+	/*
+	 * Convert cpr corner voltage to average voltage of both
+	 * a53 and a57 votlage value
+	 */
 	int average_voltage[NUM_OF_CORNERS] = {0, 746, 841, 843, 940, 953, 976,
 			1024, 1090, 1100};
 
@@ -640,6 +687,11 @@ static int msm_core_tsens_init(struct device_node *node, int cpu)
 	if (!phandle) {
 		pr_info("%s: No sensor mapping found for the core\n",
 				__func__);
+		/* Do not treat this as error as some targets might have
+		 * temperature notification only in userspace.
+		 * Use default temperature for the core. Userspace might
+		 * update the temperature once it is up.
+		 */
 		cpu_node->sensor_id = -ENODEV;
 		cpu_node->temp = DEFAULT_TEMP;
 		return 0;
@@ -747,13 +799,26 @@ static int system_suspend_handler(struct notifier_block *nb,
 	case PM_POST_HIBERNATION:
 	case PM_POST_SUSPEND:
 	case PM_POST_RESTORE:
+		/*
+		 * Set completion event to read temperature and repopulate
+		 * stats
+		 */
 		in_suspend = 0;
 		complete(&sampling_completion);
 		break;
 	case PM_HIBERNATION_PREPARE:
 	case PM_SUSPEND_PREPARE:
+		/*
+		 * cancel delayed work to be able to restart immediately
+		 * after system resume
+		 */
 		in_suspend = 1;
 		cancel_delayed_work(&sampling_work);
+		/*
+		 * cancel TSENS interrupts as we do not want to wake up from
+		 * suspend to take care of repopulate stats while the system is
+		 * in suspend
+		 */
 		for_each_possible_cpu(cpu) {
 			if (activity[cpu].sensor_id < 0)
 				continue;
@@ -906,7 +971,7 @@ static int uio_init(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	
+	/* Setup device */
 	info->name = clnt_res->name;
 	info->version = "1.0";
 	info->mem[0].addr = ea_mem_pyhsical;
@@ -919,7 +984,6 @@ static int uio_init(struct platform_device *pdev)
 		return ret;
 	}
 	dev_set_drvdata(&pdev->dev, info);
-	pr_info("Device created for client '%s'\n", clnt_res->name);
 
 	return 0;
 }
@@ -953,6 +1017,7 @@ static int msm_core_dev_probe(struct platform_device *pdev)
 	ret = of_property_read_u32(node, key, &poll_ms);
 	if (ret)
 		pr_info("msm-core initialized without polling period\n");
+
 
 	ret = uio_init(pdev);
 	if (ret)

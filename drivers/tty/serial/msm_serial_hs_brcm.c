@@ -1189,11 +1189,6 @@ void tx_timeout_handler_brcm(unsigned long arg)
 	if (UARTDM_ISR_CURRENT_CTS_BMSK & isr)
 		MSM_HS_WARN("%s(): CTS Disabled, ISR 0x%x", __func__, isr);
 	dump_uart_hs_registers(msm_uport);
-	
-	sps_get_bam_debug_info(msm_uport->bam_handle,
-			93,
-			SPS_BAM_PIPE(msm_uport->bam_tx_ep_pipe_index),
-			0, 2);
 }
 
 static void msm_hs_submit_tx_locked(struct uart_port *uport)
@@ -1880,6 +1875,11 @@ static int msm_hs_check_clock_off(struct uart_port *uport)
 		msm_uport->wakeup.ignore = 1;
 		enable_irq(msm_uport->wakeup.irq);
 		disable_irq(uport->irq);
+	
+	} else {
+		
+		disable_irq(uport->irq);
+	
 	}
 	wake_unlock(&msm_uport->dma_wake_lock);
 
@@ -2058,6 +2058,11 @@ void msm_hs_request_clock_on_brcm(struct uart_port *uport)
 			disable_irq_nosync(msm_uport->wakeup.irq);
 			
 			enable_irq(uport->irq);
+		
+		} else {
+			
+			enable_irq(uport->irq);
+		
 		}
 		spin_unlock_irqrestore(&uport->lock, flags);
 		mutex_unlock(&msm_uport->clk_mutex);
