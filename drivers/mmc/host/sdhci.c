@@ -295,8 +295,6 @@ retry_reset:
 					host->ops->reset_workaround(host, 1);
 					host->reset_wa_applied = 1;
 					host->reset_wa_cnt++;
-					if (host->mmc)
-						host->mmc->reset_wa_cnt++;
 					goto retry_reset;
 				} else {
 					pr_err("%s: Reset 0x%x failed with workaround\n",
@@ -320,8 +318,8 @@ retry_reset:
 
 	if ((host->quirks2 & SDHCI_QUIRK2_USE_RESET_WORKAROUND) &&
 		host->ops->reset_workaround && host->reset_wa_applied) {
-		pr_info("%s: Reset 0x%x successful with workaround, wa_cnt %d\n",
-			mmc_hostname(host->mmc), (int)mask, host->reset_wa_cnt);
+		pr_info("%s: Reset 0x%x successful with workaround\n",
+			mmc_hostname(host->mmc), (int)mask);
 		
 		host->ops->reset_workaround(host, 0);
 		host->reset_wa_applied = 0;

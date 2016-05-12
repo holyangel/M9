@@ -2853,21 +2853,9 @@ static int msm_snd_get_ext_clk_cnt(void)
 	return clk_users;
 }
 
-static int msm_rcv_amp_get(struct snd_kcontrol *kcontrol,
+static int msm_htc_amp_get(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
-	mutex_lock(&htc_amp_mutex);
-	ucontrol->value.integer.value[0] = (htc_amp_mask & HTC_RCV_AMP)?1:0;
-	mutex_unlock(&htc_amp_mutex);
-	return 0;
-}
-
-static int msm_hs_amp_get(struct snd_kcontrol *kcontrol,
-				struct snd_ctl_elem_value *ucontrol)
-{
-	mutex_lock(&htc_amp_mutex);
-	ucontrol->value.integer.value[0] = (htc_amp_mask & HTC_HS_AMP)?1:0;
-	mutex_unlock(&htc_amp_mutex);
 	return 0;
 }
 
@@ -3064,10 +3052,10 @@ static int htc_mi2s_amp_event(struct snd_soc_dapm_widget *w,
 
 static const struct snd_kcontrol_new htc_amp_siwth_control[] = {
 	SOC_SINGLE_EXT("RCV AMP EN Switch", SND_SOC_NOPM,
-	0, 1, 0, msm_rcv_amp_get,msm_rcv_amp_put),
+	0, 1, 0, msm_htc_amp_get,msm_rcv_amp_put),
 
 	SOC_SINGLE_EXT("HS AMP EN Switch", SND_SOC_NOPM,
-	0, 1, 0, msm_hs_amp_get,msm_hs_amp_put),
+	0, 1, 0, msm_htc_amp_get,msm_hs_amp_put),
 };
 
 static const struct snd_kcontrol_new htc_audiosphere_params_control[] = {

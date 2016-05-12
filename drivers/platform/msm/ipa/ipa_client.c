@@ -14,10 +14,6 @@
 #include <linux/device.h>
 #include "ipa_i.h"
 
-/*
- * These values were determined empirically and shows good E2E bi-
- * directional throughputs
- */
 #define IPA_HOLB_TMR_EN 0x1
 #define IPA_HOLB_TMR_DIS 0x0
 #define IPA_HOLB_TMR_DEFAULT_VAL 0x1ff
@@ -32,7 +28,7 @@ int ipa_enable_data_path(u32 clnt_hdl)
 	int res = 0;
 
 	IPADBG("Enabling data path\n");
-	/* From IPA 2.0, disable HOLB */
+	
 	if ((ipa_ctx->ipa_hw_type == IPA_HW_v2_0 ||
 		ipa_ctx->ipa_hw_type == IPA_HW_v2_5) &&
 		IPA_CLIENT_IS_CONS(ep->client)) {
@@ -42,7 +38,7 @@ int ipa_enable_data_path(u32 clnt_hdl)
 		res = ipa_cfg_ep_holb(clnt_hdl, &holb_cfg);
 	}
 
-	/* Enable the pipe */
+	
 	if (IPA_CLIENT_IS_CONS(ep->client) &&
 	    (ep->keep_ipa_awake ||
 	     ipa_ctx->resume_on_connect[ep->client] ||
@@ -64,7 +60,7 @@ int ipa_disable_data_path(u32 clnt_hdl)
 	int res = 0;
 
 	IPADBG("Disabling data path\n");
-	/* On IPA 2.0, enable HOLB in order to prevent IPA from stalling */
+	
 	if ((ipa_ctx->ipa_hw_type == IPA_HW_v2_0 ||
 		ipa_ctx->ipa_hw_type == IPA_HW_v2_5) &&
 		IPA_CLIENT_IS_CONS(ep->client)) {
@@ -74,7 +70,7 @@ int ipa_disable_data_path(u32 clnt_hdl)
 		res = ipa_cfg_ep_holb(clnt_hdl, &holb_cfg);
 	}
 
-	/* Suspend the pipe */
+	
 	if (IPA_CLIENT_IS_CONS(ep->client)) {
 		memset(&ep_cfg_ctrl, 0 , sizeof(struct ipa_ep_cfg_ctrl));
 		ep_cfg_ctrl.ipa_ep_suspend = true;
@@ -96,7 +92,7 @@ static int ipa_connect_configure_sps(const struct ipa_connect_params *in,
 {
 	int result = -EFAULT;
 
-	/* Default Config */
+	
 	ep->ep_hdl = sps_alloc_endpoint();
 
 	if (ep->ep_hdl == NULL) {
@@ -111,7 +107,7 @@ static int ipa_connect_configure_sps(const struct ipa_connect_params *in,
 		return -EFAULT;
 	}
 
-	/* Specific Config */
+	
 	if (IPA_CLIENT_IS_CONS(in->client)) {
 		ep->connect.mode = SPS_MODE_SRC;
 		ep->connect.destination =
@@ -173,21 +169,6 @@ static int ipa_connect_allocate_fifo(const struct ipa_connect_params *in,
 	return 0;
 }
 
-/**
- * ipa_connect() - low-level IPA client connect
- * @in:	[in] input parameters from client
- * @sps:	[out] sps output from IPA needed by client for sps_connect
- * @clnt_hdl:	[out] opaque client handle assigned by IPA to client
- *
- * Should be called by the driver of the peripheral that wants to connect to
- * IPA in BAM-BAM mode. these peripherals are USB and HSIC. this api
- * expects caller to take responsibility to add any needed headers, routing
- * and filtering tables and rules as needed.
- *
- * Returns:	0 on success, negative on failure
- *
- * Note:	Should not be called from atomic context
- */
 int ipa_connect(const struct ipa_connect_params *in, struct ipa_sps_params *sps,
 		u32 *clnt_hdl)
 {
@@ -240,7 +221,7 @@ int ipa_connect(const struct ipa_connect_params *in, struct ipa_sps_params *sps,
 			IPAERR("fail to configure EP.\n");
 			goto ipa_cfg_ep_fail;
 		}
-		/* Setting EP status 0 */
+		
 		memset(&ep_status, 0, sizeof(ep_status));
 		if (ipa_cfg_ep_status(ipa_ep_idx, &ep_status)) {
 			IPAERR("fail to configure status of EP.\n");
@@ -297,7 +278,7 @@ int ipa_connect(const struct ipa_connect_params *in, struct ipa_sps_params *sps,
 		ep->connect.event_thresh = IPA_USB_EVENT_THRESHOLD;
 	else
 		ep->connect.event_thresh = IPA_EVENT_THRESHOLD;
-	ep->connect.options = SPS_O_AUTO_ENABLE;    /* BAM-to-BAM */
+	ep->connect.options = SPS_O_AUTO_ENABLE;    
 
 	result = ipa_sps_connect_safe(ep->ep_hdl, &ep->connect, in->client);
 	if (result) {
@@ -352,18 +333,6 @@ fail:
 }
 EXPORT_SYMBOL(ipa_connect);
 
-/**
- * ipa_disconnect() - low-level IPA client disconnect
- * @clnt_hdl:	[in] opaque client handle assigned by IPA to client
- *
- * Should be called by the driver of the peripheral that wants to disconnect
- * from IPA in BAM-BAM mode. this api expects caller to take responsibility to
- * free any needed headers, routing and filtering tables and rules as needed.
- *
- * Returns:	0 on success, negative on failure
- *
- * Note:	Should not be called from atomic context
- */
 int ipa_disconnect(u32 clnt_hdl)
 {
 	int result;
@@ -434,14 +403,6 @@ int ipa_disconnect(u32 clnt_hdl)
 }
 EXPORT_SYMBOL(ipa_disconnect);
 
-/**
-* ipa_reset_endpoint() - reset an endpoint from BAM perspective
-* @clnt_hdl: [in] IPA client handle
-*
-* Returns:	0 on success, negative on failure
-*
-* Note:	Should not be called from atomic context
-*/
 int ipa_reset_endpoint(u32 clnt_hdl)
 {
 	int res;
@@ -474,19 +435,6 @@ bail:
 }
 EXPORT_SYMBOL(ipa_reset_endpoint);
 
-/**
- * ipa_sps_connect_safe() - connect endpoint from BAM prespective
- * @h: [in] sps pipe handle
- * @connect: [in] sps connect parameters
- * @ipa_client: [in] ipa client handle representing the pipe
- *
- * This function connects a BAM pipe using SPS driver sps_connect() API
- * and by requesting uC interface to reset the pipe, avoids an IPA HW
- * limitation that does not allow reseting a BAM pipe during traffic in
- * IPA TX command queue.
- *
- * Returns:	0 on success, negative on failure
- */
 int ipa_sps_connect_safe(struct sps_pipe *h, struct sps_connect *connect,
 			 enum ipa_client_type ipa_client)
 {

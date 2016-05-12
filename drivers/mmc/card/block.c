@@ -2622,12 +2622,7 @@ static int mmc_blk_issue_rw_rq(struct mmc_queue *mq, struct request *rqc)
 				__func__, status, retry);
 			if (!did_reinit) {
 				did_reinit = 1;
-				card->host->reset_wa_cnt = 0;
 				mmc_reinit_card(card->host);
-			}
-			if (card->host->reset_wa_cnt > 2) {
-				pr_info("%s: still has error after apply reset wa 2 times\n", mmc_hostname(card->host));
-				BUG_ON(1);
 			}
 			if (retry++ < 5)
 				break;

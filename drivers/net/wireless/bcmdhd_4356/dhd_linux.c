@@ -3363,16 +3363,6 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 				DHD_ERROR(("%s: UNICAST: " MACDBG "\n",
 					__FUNCTION__, MAC2STRDBG(&dump_data[6])));
 			}
-			if (protocol == ETHER_TYPE_IP) {
-				struct iphdr *h = (struct iphdr *)&dump_data[ETHER_HDR_LEN];
-				
-				if (h->ihl != 5 || h->version != 4) {
-					DHD_INFO(("%s: invalid IP header\n", __FUNCTION__));
-				} else {
-					DHD_ERROR(("%s: SRC IP addr: " IPV4_ADDR_STR "\n",
-						__FUNCTION__, IPV4_ADDR_TO_STR(ntoh32(h->saddr))));
-				}
-			}
 			
 #ifdef DHD_RX_FULL_DUMP
 			{
@@ -9209,6 +9199,9 @@ static void dhd_hang_process(void *dhd_info, void *event_info, u8 event)
 {
 	dhd_info_t *dhd;
 	struct net_device *dev;
+#if defined(PCIE_FULL_DONGLE)
+	dhd_pub_t *dhdp = NULL;
+#endif
 	dhd = (dhd_info_t *)dhd_info;
 	dev = dhd->iflist[0]->net;
 
@@ -9216,15 +9209,37 @@ static void dhd_hang_process(void *dhd_info, void *event_info, u8 event)
 #ifdef CUSTOMER_HW_ONE
 		DHD_ERROR(("%s call netif_stop_queue to stop traffic\n", __FUNCTION__));
 		netif_stop_queue(dev);
-		
-		
-		if (otp_write)
-			DHD_ERROR(("%s before send hang, do bus down to prevent"
-				" additional event from firmware\n", __FUNCTION__));
-		else
-			DHD_ERROR(("%s beforce hang OTP is empty \n", __FUNCTION__));
-		
+#if defined(PCIE_FULL_DONGLE)
+		dhdp = &dhd->pub;
+		if (dhdp) {
+			if (!dhdp->dongle_trap_occured &&
+				(dhdp->rxcnt_timeout < MAX_CNTL_RX_TIMEOUT) &&
+				(dhdp->txcnt_timeout < MAX_CNTL_TX_TIMEOUT) &&
+				(dhdp->d3ackcnt_timeout < MAX_CNTL_D3ACK_TIMEOUT)) {
+				DHD_ERROR(("%s: suspend PCIE bus\n", __FUNCTION__));
+				dhd_bus_suspend(dhdp);
+			} else {
+				DHD_ERROR(("%s: trap %d\n", __FUNCTION__,
+					dhdp->dongle_trap_occured));
+				DHD_ERROR(("%s: rx timeout %d\n", __FUNCTION__,
+					dhdp->rxcnt_timeout));
+				DHD_ERROR(("%s: tx timeout %d\n", __FUNCTION__,
+					dhdp->txcnt_timeout));
+				DHD_ERROR(("%s: d3ack timeout %d\n", __FUNCTION__,
+					dhdp->d3ackcnt_timeout));
+				if (dhd->pub.busstate == DHD_BUS_DATA) {
+					DHD_ERROR(("%s: disable PCIE interrupts\n", __FUNCTION__));
+					dhdpcie_pub_intr_disable(dhdp);
+				}
+			}
+		}
+        if (otp_write)
+		    DHD_ERROR(("%s before send hang, do bus down to prevent"
+			    " additional event from firmware\n", __FUNCTION__));
+        else
+            DHD_ERROR(("%s beforce hang OTP is empty \n", __FUNCTION__));
 		dhd->pub.busstate = DHD_BUS_DOWN;
+#endif 
 #else
 		rtnl_lock();
 		dev_close(dev);

@@ -85,17 +85,9 @@
 static inline bool
 is_dfs(uint16 channel)
 {
-#if 0
 	if (channel >= 52 && channel <= 64)			
-#else
-	if (channel >= 50 && channel <= 64)			
-#endif
 		return TRUE;
-#if 0
 	else if (channel >= 100 && channel <= 140)	
-#else
-	else if (channel >= 100 && channel <= 144)	
-#endif
 		return TRUE;
 	else
 		return FALSE;

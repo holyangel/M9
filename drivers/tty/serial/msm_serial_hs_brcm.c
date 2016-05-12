@@ -1189,6 +1189,11 @@ void tx_timeout_handler_brcm(unsigned long arg)
 	if (UARTDM_ISR_CURRENT_CTS_BMSK & isr)
 		MSM_HS_WARN("%s(): CTS Disabled, ISR 0x%x", __func__, isr);
 	dump_uart_hs_registers(msm_uport);
+	
+	sps_get_bam_debug_info(msm_uport->bam_handle,
+			93,
+			SPS_BAM_PIPE(msm_uport->bam_tx_ep_pipe_index),
+			0, 2);
 }
 
 static void msm_hs_submit_tx_locked(struct uart_port *uport)
